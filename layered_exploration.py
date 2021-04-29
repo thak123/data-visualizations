@@ -1,4 +1,5 @@
 #https://www.kaggle.com/tanmay17061/transformers-bert-hidden-embeddings-visualization
+# https://github.com/sakuranew/bert-as-service/blob/master/bert/extract_features.py
 import os
 import logging
 from datasets import load_dataset
@@ -14,6 +15,30 @@ import sys
 np.set_printoptions(threshold=sys.maxsize)
 
 logging.basicConfig(level=logging.INFO)
+from typing import List
+from enum import Enum
+
+
+class PoolingStrategy(Enum):
+    NONE = 0
+    REDUCE_MAX = 1
+    REDUCE_MEAN = 2
+    REDUCE_MEAN_MAX = 3
+    FIRST_TOKEN = 4  # corresponds to [CLS] for single sequences
+    LAST_TOKEN = 5  # corresponds to [SEP] for single sequences
+    CLS_TOKEN = 4  # corresponds to the first token for single seq.
+    SEP_TOKEN = 5  # corresponds to the last token for single seq.
+
+    def __str__(self):
+        return self.name
+
+    @staticmethod
+    def from_string(s):
+        try:
+            return PoolingStrategy[s]
+        except KeyError:
+            raise ValueError()
+
 
 dim_reducer = TSNE(n_components=2)
 
@@ -29,10 +54,52 @@ def visualize_layerwise_embeddings(hidden_states, masks, labels, epoch, title, l
     labels = labels.reshape(-1)
 
     for i, layer_i in enumerate(layers_to_visualize):
+        #12,500,512,768
         layer_embeds = hidden_states[layer_i]
-
+        #500,512,768
         layer_averaged_hidden_states = torch.div(
             layer_embeds.sum(dim=1), masks.sum(dim=1, keepdim=True))
+        #500, 768
+        layer_dim_reduced_embeds = dim_reducer.fit_transform(
+            layer_averaged_hidden_states.detach().cpu().numpy())
+
+        df = pd.DataFrame.from_dict(
+            {'x': layer_dim_reduced_embeds[:, 0], 'y': layer_dim_reduced_embeds[:, 1], 'label': labels})
+
+        sns.scatterplot(data=df, x='x', y='y', hue='label', ax=ax[i])
+        fig.suptitle(f"{title}: epoch {epoch}")
+        ax[i].set_title(f"layer {layer_i+1}")
+
+    plt.savefig(f'./plots/{title}/{epoch}.png', format='png', pad_inches=0)
+
+def visualize_sliced_layerwise_embeddings(hidden_states, masks, labels, epoch, title, layers_to_visualize:List[List]):
+
+    os.makedirs("./plots/{}".format(title),exist_ok=True)
+    num_layers = len(layers_to_visualize)
+  
+    # each subplot of size 6x6, each row will hold 4 plots
+    fig = plt.figure(figsize=(24, (num_layers/4)*6))
+    ax = [fig.add_subplot(num_layers/4, 4, i+1) for i in range(num_layers)]
+    labels = labels.reshape(-1)
+
+    for i, layer_collection in enumerate(layers_to_visualize):
+        all_layers = []
+        for layer_i in layer_collection:
+            all_layers.append(hidden_states[layer_i])
+        layer_embeds = torch.cat(all_layers, dim=1)
+        print("layer_embeds",layer_embeds.shape)
+
+        # layer_embeds = torch.mean(layer_embeds,axis=1)
+        # print("layer_embeds",layer_embeds.shape)
+
+        # pooled = tf.reduce_mean(encoder_layer, axis=1)
+        #12,500,512,768
+        # layer_embeds = hidden_states[layer_i]
+
+        #500,512,768
+        layer_averaged_hidden_states = torch.div(
+            layer_embeds.sum(dim=1), masks.sum(dim=1, keepdim=True))
+        #500, 768
         layer_dim_reduced_embeds = dim_reducer.fit_transform(
             layer_averaged_hidden_states.detach().cpu().numpy())
 
@@ -106,10 +173,19 @@ for batch in dataloader_val:
             )])for layer_hidden_state_all, layer_hidden_state_batch in zip(train_hidden_states, hidden_states))
 
 
-visualize_layerwise_embeddings(hidden_states=train_hidden_states,
+# visualize_layerwise_embeddings(hidden_states=train_hidden_states,
+#                                masks=train_masks,
+#                                labels=np.array(dataset["label"]),
+#                                epoch=0,
+#                                title='train_data',
+#                                layers_to_visualize=[0, 1, 2, 3, 8, 9, 10, 11]
+#                                )
+
+visualize_sliced_layerwise_embeddings(hidden_states=train_hidden_states,
                                masks=train_masks,
                                labels=np.array(dataset["label"]),
                                epoch=0,
                                title='train_data',
-                               layers_to_visualize=[0, 1, 2, 3, 8, 9, 10, 11]
+                               layers_to_visualize=[[0, 1], [2, 3], [8, 9], [10, 11]]
                                )
+

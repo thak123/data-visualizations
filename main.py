@@ -80,12 +80,7 @@ for value in zip(dataset['label']):
 
 
 X["texts"] = x_texts
-# X["texts"] = ["@G" + label_decoder(output) if output == value else "@R-" + label_decoder(value) + "-" + label_decoder(output)
-#               for output, value in zip(outputs, df_test.label.values)]
 
-# df_test.label.astype(str)
-#([str(output)+"-" + str(value)] for output, value in zip(outputs, df_test.label.values))
-# Label each datapoint with the word it corresponds to
 for line in X.index:
     text = X.loc[line, "texts"]+"-"+str(line)
     if "@U" in text:
